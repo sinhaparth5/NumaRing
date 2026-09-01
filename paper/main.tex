@@ -1,7 +1,5 @@
-\documentclass[10pt,twocolumn]{article}
+\documentclass[10pt,journal,compsoc]{IEEEtran}
 
-\usepackage[margin=0.75in]{geometry}
-\usepackage{times}
 \usepackage[T1]{fontenc}
 \usepackage{microtype}
 \usepackage{booktabs}
@@ -10,39 +8,26 @@
 \pgfplotsset{compat=1.18}
 \usepackage{graphicx}
 \usepackage{amsmath}
-\usepackage{listings}
 \usepackage{xcolor}
-\usepackage{hyperref}
-\usepackage{natbib}
-\setcitestyle{numbers,square,comma}
-\usepackage{titlesec}
-\titleformat{\section}{\normalfont\large\bfseries}{\thesection}{1em}{}
-\titleformat{\subsection}{\normalfont\bfseries}{\thesubsection}{1em}{}
-
-\lstdefinestyle{cxx}{
-  basicstyle=\ttfamily\small,
-  keywordstyle=\bfseries,
-  showstringspaces=false,
-  breaklines=true,
-  columns=fullflexible,
-  frame=single,
-  numbers=none
-}
-\lstset{style=cxx}
+\usepackage[hidelinks]{hyperref}
 
 \sisetup{detect-weight=true, detect-family=true}
 
-\title{\Large\bfseries NumaRing: Topology-Aware Routing for NUMA-Local MPMC Queues,\\
-and What Broke When We Optimized It}
-\author{
-NumaRing Project\\
-\small \href{https://github.com/sinhaparth5/NumaRing}{github.com/sinhaparth5/NumaRing}
-}
-\date{}
-
 \begin{document}
-\maketitle
 
+\title{NumaRing: Topology-Aware Routing for NUMA-Local MPMC Queues,\\and What Broke When We
+Optimized It}
+
+\author{Parth~Kumar~Sinha
+\IEEEcompsocitemizethanks{
+\IEEEcompsocthanksitem P.~K.~Sinha is an independent researcher based in Oxford, United Kingdom.\protect\\
+E-mail: sinhaparth555@gmail.com\protect\\
+ORCID: \href{https://orcid.org/0009-0002-3120-9301}{0009-0002-3120-9301}
+}}
+
+\markboth{}{}
+
+\IEEEtitleabstractindextext{%
 \begin{abstract}
 Cache-coherence traffic across NUMA sockets, not the choice of lock-free algorithm, is the
 dominant cost in a shared-counter multi-producer multi-consumer (MPMC) queue once threads span
@@ -65,6 +50,16 @@ throughput at 32 threads stayed well short of the workload's original 120 millio
 second target. We report the improvements and the ceiling both, with the numbers behind each.
 \end{abstract}
 
+\begin{IEEEkeywords}
+NUMA, lock-free queue, MPMC, cache coherence, work stealing, tail latency, cache-conscious data
+structures
+\end{IEEEkeywords}}
+
+\maketitle
+
+\IEEEdisplaynontitleabstractindextext
+\IEEEpeerreviewmaketitle
+
 \section{Introduction}
 
 A bounded MPMC queue built on a single shared head and tail counter works well inside one CPU
@@ -75,7 +70,7 @@ different sockets, every compare-and-swap on the shared counter forces the cache
 to migrate across the inter-socket interconnect. David et al.\ measured this directly: crossing a
 socket boundary costs two to 7.5 times what an intra-socket cache-line transfer costs, and that
 gap is a property of the hardware, not of any particular queue implementation
-\citep{david2013everything}.
+\cite{david2013everything}.
 
 NumaRing addresses this by giving each NUMA node its own queue instead of sharing one. A producer
 or consumer routes to the ring buffer on the node it happens to be running on, so the common case
@@ -99,8 +94,8 @@ paper claiming otherwise without the hardware to back it up would not survive re
 venue.
 
 Our contributions are: (1) a hierarchical, NUMA-aware MPMC queue design with batched cross-node
-work stealing, built on the bounded MPMC algorithm of Vyukov \citep{vyukov_bounded_mpmc}, itself a
-descendant of the Michael--Scott queue \citep{michael1996simple}; (2) a profiling-driven fix to a
+work stealing, built on the bounded MPMC algorithm of Vyukov \cite{vyukov_bounded_mpmc}, itself a
+descendant of the Michael--Scott queue \cite{michael1996simple}; (2) a profiling-driven fix to a
 per-operation routing cost that we measured, not assumed, at \SI{183}{\nano\second}; (3) a second
 profiling-driven fix to work-stealing contention, evaluated with a same-host controlled
 methodology after we caught an earlier cross-host measurement mistake; (4) a negative result on
@@ -110,18 +105,18 @@ does not let us claim.
 
 \section{Background and related work}
 
-\textbf{Lock-free MPMC queues.} Michael and Scott's non-blocking queue \citep{michael1996simple}
+\textbf{Lock-free MPMC queues.} Michael and Scott's non-blocking queue \cite{michael1996simple}
 established the two-pointer, compare-and-swap-based design most later concurrent queues build on.
-Vyukov's bounded MPMC queue \citep{vyukov_bounded_mpmc} adapts that idea to a fixed-size ring
+Vyukov's bounded MPMC queue \cite{vyukov_bounded_mpmc} adapts that idea to a fixed-size ring
 buffer: every slot carries its own sequence number, so a producer or consumer only contends on the
 one slot it is about to touch, and the shared state is reduced to two atomic position counters. We
 use Vyukov's algorithm as the node-local ring buffer inside NumaRing (Section~\ref{sec:ring}).
-\texttt{boost::lockfree::queue} \citep{boost_lockfree} and moodycamel's
-\texttt{ConcurrentQueue} \citep{desrochers2014moodycamel} are both mature, widely used C++ MPMC
+\texttt{boost::lockfree::queue} \cite{boost_lockfree} and moodycamel's
+\texttt{ConcurrentQueue} \cite{desrochers2014moodycamel} are both mature, widely used C++ MPMC
 queues; neither is NUMA-topology-aware, and we use both as baselines in
 Section~\ref{sec:eval}.
 
-\textbf{NUMA-aware synchronization.} David et al.\ \citep{david2013everything} is the closest
+\textbf{NUMA-aware synchronization.} David et al.\ \cite{david2013everything} is the closest
 thing to a definitive study of why synchronization stops scaling across sockets: they show that
 above a small number of threads, the bottleneck moves from the algorithm to the hardware
 cache-coherence protocol, and that this is true across lock-free, lock-based, and hybrid designs
@@ -129,7 +124,7 @@ alike. Their result is the premise this paper starts from. We do not claim NumaR
 hardware ceiling; Section~\ref{sec:discussion} is explicit that it does not, at the scale we could
 test.
 
-\textbf{Detecting cross-socket contention.} \texttt{perf c2c} \citep{mario2016c2c} instruments the
+\textbf{Detecting cross-socket contention.} \texttt{perf c2c} \cite{mario2016c2c} instruments the
 Linux performance-counter subsystem to report which cache lines suffer HITM (a load that hits a
 line held modified in another core's cache), the direct hardware signature of the problem this
 paper is about. We planned to use it. Section~\ref{sec:eval} explains why the cloud environment we
@@ -148,7 +143,7 @@ hardware that does not need it.
 \label{sec:ring}
 
 Each node's queue is a bounded, lock-free ring buffer implementing Vyukov's algorithm
-\citep{vyukov_bounded_mpmc}. Every slot holds a value and its own atomic sequence number. An
+\cite{vyukov_bounded_mpmc}. Every slot holds a value and its own atomic sequence number. An
 enqueue reads the current tail position, checks the target slot's sequence number to confirm the
 slot is free, and claims the slot with one compare-and-swap on the tail counter; a dequeue is the
 mirror image on the head counter. Because the sequence number lives in the slot itself rather than
@@ -263,6 +258,8 @@ lazily-built, process-wide lookup table from CPU to node, computed once and read
 only the static part of the lookup is cached.
 
 \begin{table}[t]
+\caption{Routing-lookup cost, measured directly on real 2-node NUMA hardware.}
+\label{tab:routing}
 \centering\small
 \begin{tabular}{lrrr}
 \toprule
@@ -272,8 +269,6 @@ Metric & Before & After & Factor \\
 \texttt{numa\_node\_of\_cpu()} & \SI{130}{ns} & \SI{0.89}{ns} & 146$\times$ \\
 \bottomrule
 \end{tabular}
-\caption{Routing-lookup cost, measured directly on real 2-node NUMA hardware.}
-\label{tab:routing}
 \end{table}
 
 For context, a single-threaded enqueue-dequeue round trip through the underlying ring buffer, with
@@ -304,6 +299,9 @@ skipped attempt falls back to the existing single-item cross-node path, so this 
 code path handles the low-occupancy case, never correctness.
 
 \begin{table}[t]
+\caption{\texttt{numaring::Queue} throughput and median latency, same host, before and after both
+routing and work-stealing fixes.}
+\label{tab:worksteal}
 \centering\small
 \begin{tabular}{lrrrr}
 \toprule
@@ -314,9 +312,6 @@ Threads & \multicolumn{2}{c}{Throughput (M\,ops/s)} & \multicolumn{2}{c}{p50 lat
 32 & 0.260 & 0.321 & \SI{1.69}{ms} & \SI{8.4}{\micro\second} \\
 \bottomrule
 \end{tabular}
-\caption{\texttt{numaring::Queue} throughput and median latency, same host, before and after both
-routing and work-stealing fixes.}
-\label{tab:worksteal}
 \end{table}
 
 Figure~\ref{fig:scaling} plots throughput against thread count for the fixed build against all
@@ -375,6 +370,8 @@ Table~\ref{tab:tail32} for the exact values plotted.}
 \end{figure}
 
 \begin{table}[t]
+\caption{Latency percentiles at 32 threads, same host, current build.}
+\label{tab:tail32}
 \centering\small
 \begin{tabular}{lrrrr}
 \toprule
@@ -386,8 +383,6 @@ moodycamel      & \SI{4.42}{\micro\second}   & \SI{2.50}{ms}  & \SI{3.17}{ms} & 
 Mutex+deque     & \SI{43.3}{\micro\second}   & \SI{160}{\micro\second}  & \SI{227}{\micro\second} & \SI{290}{\micro\second} \\
 \bottomrule
 \end{tabular}
-\caption{Latency percentiles at 32 threads, same host, current build.}
-\label{tab:tail32}
 \end{table}
 
 Table~\ref{tab:tail32} is worth reading carefully rather than skimming for a winner. NumaRing's
@@ -418,6 +413,9 @@ and measured both against an uninstrumented, fixed-duration sustained-load drive
 that has no per-operation clock call diluting the measurement.
 
 \begin{table}[t]
+\caption{\texttt{numaring\_sustained\_load} throughput (M ops/s) at 32 threads, same host,
+15-second runs, three repeats per variant.}
+\label{tab:backoff}
 \centering\small
 \begin{tabular}{lrrrr}
 \toprule
@@ -429,9 +427,6 @@ Exponential backoff      & 7.25 & 5.44  & 6.47  & 6.39 \\
 Work-stealing fix, no backoff & 9.82 & 8.24 & 11.03 & \textbf{9.70} \\
 \bottomrule
 \end{tabular}
-\caption{\texttt{numaring\_sustained\_load} throughput (M ops/s) at 32 threads, same host,
-15-second runs, three repeats per variant.}
-\label{tab:backoff}
 \end{table}
 
 Both backoff variants reduced raw throughput, and the more sophisticated one reduced it further,
@@ -505,7 +500,7 @@ throughput target we did not hit alongside the latency improvements we did. We t
 useful contribution than a set of numbers tuned to look better than the hardware we tested on
 actually supports.
 
-\bibliographystyle{plainnat}
+\bibliographystyle{IEEEtran}
 \bibliography{references}
 
 \end{document}
