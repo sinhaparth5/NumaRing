@@ -419,7 +419,8 @@ identical timestamp-payload workload through the identical harness.}
   symbolic x coords={p50,p95,p99,p999},
   xtick=data,
   ylabel={Latency ($\mu$s, log scale)}, ymode=log,
-  legend style={font=\scriptsize, at={(0.02,0.98)}, anchor=north west},
+  legend style={font=\scriptsize, at={(0.5,1.03)}, anchor=south, legend columns=2,
+                column sep=1ex, /tikz/every even column/.append style={column sep=1ex}},
   grid=major, grid style={line width=.1pt, draw=gray!25},
   enlarge x limits=0.2,
 ]
