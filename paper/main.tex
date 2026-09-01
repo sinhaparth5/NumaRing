@@ -6,6 +6,7 @@
 \usepackage{siunitx}
 \usepackage{pgfplots}
 \pgfplotsset{compat=1.18}
+\usetikzlibrary{arrows.meta,positioning,fit,backgrounds,patterns}
 \usepackage{graphicx}
 \usepackage{amsmath}
 \usepackage{xcolor}
@@ -137,7 +138,45 @@ NumaRing is a header-only C++20 library. Its top-level type, \texttt{Queue<T>}, 
 \texttt{NodeLocalRingBuffer<T>} per NUMA node reported by the host (Section~\ref{sec:topology}) and
 adds a batched cross-node work-stealing layer on top (Section~\ref{sec:worksteal}). On a
 single-node or non-NUMA host it degrades to exactly one ring buffer, so the design costs nothing on
-hardware that does not need it.
+hardware that does not need it. Figure~\ref{fig:arch} shows the two-node case this paper evaluates.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[
+  node distance=6mm,
+  box/.style={draw, thick, rounded corners=2pt, minimum height=8mm, align=center, font=\small},
+  ring/.style={box, fill=blue!8, minimum width=32mm},
+  thr/.style={box, fill=gray!12, minimum width=15mm, font=\scriptsize},
+  lbl/.style={font=\scriptsize, align=center},
+  >=Stealth
+]
+  \node[thr] (p0) {Producer};
+  \node[thr, below=4mm of p0] (c0) {Consumer};
+  \node[ring, right=14mm of p0, yshift=-2mm] (r0) {NodeLocalRingBuffer\\[1pt]\scriptsize(node 0 memory)};
+
+  \node[thr, below=18mm of c0] (p1) {Producer};
+  \node[thr, below=4mm of p1] (c1) {Consumer};
+  \node[ring, right=14mm of p1, yshift=-2mm] (r1) {NodeLocalRingBuffer\\[1pt]\scriptsize(node 1 memory)};
+
+  \draw[->] (p0) -- (r0.170);
+  \draw[->] (r0.190) -- (c0);
+  \draw[->] (p1) -- (r1.170);
+  \draw[->] (r1.190) -- (c1);
+
+  \draw[->, thick] ([yshift=2mm]r0.east) to[out=15,in=-15,looseness=1.6] node[lbl, right=1mm] {batched\\work steal\\(1 CAS/batch)} ([yshift=2mm]r1.east);
+  \draw[->, thick] ([yshift=-2mm]r1.east) to[out=-165,in=165,looseness=1.6] ([yshift=-2mm]r0.east);
+
+  \begin{scope}[on background layer]
+    \node[draw, dashed, fit=(p0)(c0)(r0), inner sep=3mm, label={[font=\scriptsize]above:NUMA node 0}] (n0) {};
+    \node[draw, dashed, fit=(p1)(c1)(r1), inner sep=3mm, label={[font=\scriptsize]above:NUMA node 1}] (n1) {};
+  \end{scope}
+\end{tikzpicture}
+\caption{NumaRing's two-node architecture. Producers and consumers route to their own node's ring
+buffer via \texttt{current\_node()} (Section~\ref{sec:topology}); the fast path never crosses the
+dashed boundary. Batched work stealing (Section~\ref{sec:worksteal}) only runs when a node's ring
+is locally full or empty.}
+\label{fig:arch}
+\end{figure}
 
 \subsection{Node-local ring buffer}
 \label{sec:ring}
@@ -428,6 +467,35 @@ Work-stealing fix, no backoff & 9.82 & 8.24 & 11.03 & \textbf{9.70} \\
 \bottomrule
 \end{tabular}
 \end{table}
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  width=\linewidth, height=5cm,
+  ybar, bar width=13pt,
+  symbolic x coords={Pre-fix,Flat pause,Exp.\ backoff,Final},
+  xtick={Pre-fix,Flat pause,Exp.\ backoff,Final},
+  x tick label style={font=\scriptsize, rotate=15, anchor=north east},
+  ylabel={Throughput (M ops/s)}, ylabel style={font=\scriptsize},
+  ymin=0, ymax=12.5,
+  nodes near coords, nodes near coords style={font=\scriptsize, yshift=2mm},
+  error bars/y dir=both, error bars/y explicit,
+  grid=major, grid style={line width=.1pt, draw=gray!25},
+  enlarge x limits=0.18,
+]
+\addplot[fill=gray!45, postaction={pattern=north east lines}] coordinates {(Pre-fix,9.03) +- (0,0.38)};
+\addplot[fill=red!55, postaction={pattern=crosshatch dots}]  coordinates {(Flat pause,7.49) +- (0,0.59)};
+\addplot[fill=red!75, postaction={pattern=horizontal lines}] coordinates {(Exp.\ backoff,6.39) +- (0,0.95)};
+\addplot[fill=blue!55, postaction={pattern=north west lines}] coordinates {(Final,9.70) +- (0,1.46)};
+\end{axis}
+\end{tikzpicture}
+\caption{\texttt{numaring\_sustained\_load} throughput at 32 threads, same host (Table~\ref{tab:backoff}):
+mean of three 15-second runs, error bars span the observed range. Both backoff variants (red) sit
+below the pre-fix baseline (gray); the work-stealing fix with no backoff (blue) is the only variant
+that improves on it.}
+\label{fig:backoff}
+\end{figure}
 
 Both backoff variants reduced raw throughput, and the more sophisticated one reduced it further,
 not less. Under this driver's true wall-to-wall contention, with no pacing between a thread's own
