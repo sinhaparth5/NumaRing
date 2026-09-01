@@ -17,4 +17,7 @@ static void BM_CacheLinePaddedIncrement(benchmark::State& state) {
 }
 BENCHMARK(BM_CacheLinePaddedIncrement);
 
-BENCHMARK_MAIN();
+// No BENCHMARK_MAIN() here — main() comes from the linked
+// benchmark::benchmark_main library so this file can share an
+// executable with other *_benchmark.cpp translation units (see
+// benchmarks/CMakeLists.txt).

@@ -12,5 +12,6 @@ FetchContent_MakeAvailable(benchmark)
 
 add_executable(numaring_benchmarks
   cache_alignment_benchmark.cpp
+  topology_benchmark.cpp
 )
 target_link_libraries(numaring_benchmarks PRIVATE numaring::numaring benchmark::benchmark_main)
