@@ -1,0 +1,31 @@
+{
+  "title": "NumaRing",
+  "description": "<p>A cache-conscious, topology-aware multi-producer multi-consumer (MPMC) queue for high-core NUMA server CPUs. Gives each NUMA node its own bounded ring buffer, routes producers and consumers to their own node's ring, and moves work between nodes in batches instead of item by item.</p>",
+  "creators": [
+    {
+      "name": "Sinha, Parth Kumar",
+      "orcid": "0009-0002-3120-9301",
+      "affiliation": "Independent Researcher"
+    }
+  ],
+  "access_right": "open",
+  "license": "apache-2.0",
+  "upload_type": "software",
+  "language": "eng",
+  "keywords": [
+    "NUMA",
+    "lock-free",
+    "MPMC queue",
+    "concurrent data structures",
+    "cache-conscious",
+    "work stealing",
+    "C++20"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/sinhaparth5/NumaRing/blob/master/paper/main.pdf",
+      "relation": "isDocumentedBy",
+      "resource_type": "publication-preprint"
+    }
+  ]
+}
