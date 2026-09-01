@@ -5,13 +5,13 @@ Checklist form of `docs/NumaRing ROADMAP.pdf`. Work through phases in order — 
 
 ## Phase 1 — Environment & Architecture Setup
 
-- [ ] Repository structure: header-only layout under `include/numaring/`
-- [ ] `benchmarks/` directory (Google Benchmark harness scaffold)
-- [ ] `tests/` directory (Google Test harness scaffold)
-- [ ] `CMakeLists.txt` targeting C++20 (`-std=c++20`)
-- [ ] Optimization flags wired in (`-O3`, `-march=native`)
-- [ ] Link `libnuma` (`-lnuma`)
-- [ ] 128-byte dual-cache-line alignment wrapper (`alignas(128)`) for atomic tracking variables
+- [x] Repository structure: header-only layout under `include/numaring/`
+- [x] `benchmarks/` directory (Google Benchmark harness scaffold)
+- [x] `tests/` directory (Google Test harness scaffold)
+- [x] `CMakeLists.txt` targeting C++20 (`-std=c++20`)
+- [x] Optimization flags wired in (`-O3`, `-march=native`)
+- [x] Link `libnuma` (`-lnuma`)
+- [x] 128-byte dual-cache-line alignment wrapper (`alignas(128)`) for atomic tracking variables
 
 ## Phase 2 — NUMA Topology Discovery & Dynamic Routing
 
