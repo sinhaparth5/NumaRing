@@ -1,7 +1,12 @@
-# NumaRing
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset="assets/logo-light.svg">
+  <img alt="NumaRing" src="assets/logo-light.svg" width="420">
+</picture>
 
 A cache-conscious, topology-aware MPMC (multi-producer multi-consumer) queue for high-core NUMA server CPUs.
 See `docs/NumaRing Theory.pdf` for the design rationale and `docs/ROADMAP.md` for build status.
+The evaluation and results are written up in `paper/main.pdf` (source: `paper/main.tex`).
 
 ## Building
 
@@ -21,4 +26,4 @@ ctest --test-dir build
 ```
 
 NUMA-topology-dependent behavior (node-local placement, cross-socket profiling) is validated on real
-multi-socket hardware rather than a dev laptop — see `CLAUDE.md` for the GCP testing workflow.
+multi-socket hardware rather than a dev laptop. See `CLAUDE.md` for the GCP testing workflow.
