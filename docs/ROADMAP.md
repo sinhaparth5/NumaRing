@@ -15,9 +15,9 @@ Checklist form of `docs/NumaRing ROADMAP.pdf`. Work through phases in order — 
 
 ## Phase 2 — NUMA Topology Discovery & Dynamic Routing
 
-- [ ] Hardware topology detection via `libnuma` (`numa_available()`, `numa_max_node()`)
-- [ ] Core-to-node mapper (`sched_getcpu()` + `numa_node_of_cpu()`)
-- [ ] Fallback pathway: single-node MPMC ring buffer for non-NUMA / unified-memory machines
+- [x] Hardware topology detection via `libnuma` (`numa_available()`, `numa_max_node()`)
+- [x] Core-to-node mapper (`sched_getcpu()` + `numa_node_of_cpu()`)
+- [x] Fallback pathway: single-node MPMC ring buffer for non-NUMA / unified-memory machines
 
 ## Phase 3 — Node-Local Ring Buffer Core
 
