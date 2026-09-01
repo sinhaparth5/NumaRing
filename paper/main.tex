@@ -6,7 +6,7 @@
 \usepackage{siunitx}
 \usepackage{pgfplots}
 \pgfplotsset{compat=1.18}
-\usetikzlibrary{arrows.meta,positioning,fit,backgrounds,patterns}
+\usetikzlibrary{arrows.meta,positioning,fit,backgrounds,patterns,calc}
 \usepackage{graphicx}
 \usepackage{amsmath}
 \usepackage{xcolor}
@@ -163,13 +163,17 @@ hardware that does not need it. Figure~\ref{fig:arch} shows the two-node case th
   \draw[->] (p1) -- (r1.170);
   \draw[->] (r1.190) -- (c1);
 
-  \draw[->, thick] ([yshift=2mm]r0.east) to[out=15,in=-15,looseness=1.6] node[lbl, right=1mm] {batched\\work steal\\(1 CAS/batch)} ([yshift=2mm]r1.east);
-  \draw[->, thick] ([yshift=-2mm]r1.east) to[out=-165,in=165,looseness=1.6] ([yshift=-2mm]r0.east);
-
   \begin{scope}[on background layer]
     \node[draw, dashed, fit=(p0)(c0)(r0), inner sep=3mm, label={[font=\scriptsize]above:NUMA node 0}] (n0) {};
     \node[draw, dashed, fit=(p1)(c1)(r1), inner sep=3mm, label={[font=\scriptsize]above:NUMA node 1}] (n1) {};
   \end{scope}
+
+  % Work-stealing connector: routed as a right angle entirely outside
+  % both dashed node boundaries, so it never crosses box text.
+  \coordinate (m0) at ([xshift=12mm]n0.east);
+  \coordinate (m1) at ([xshift=12mm]n1.east);
+  \draw[<->, thick] (n0.east) -- (m0) -- (m1) -- (n1.east);
+  \node[lbl, right=1mm] at ($(m0)!0.5!(m1)$) {batched\\work steal\\(1 CAS/batch)};
 \end{tikzpicture}
 \caption{NumaRing's two-node architecture. Producers and consumers route to their own node's ring
 buffer via \texttt{current\_node()} (Section~\ref{sec:topology}); the fast path never crosses the
@@ -478,11 +482,11 @@ Work-stealing fix, no backoff & 9.82 & 8.24 & 11.03 & \textbf{9.70} \\
   xtick={Pre-fix,Flat pause,Exp.\ backoff,Final},
   x tick label style={font=\scriptsize, rotate=15, anchor=north east},
   ylabel={Throughput (M ops/s)}, ylabel style={font=\scriptsize},
-  ymin=0, ymax=12.5,
-  nodes near coords, nodes near coords style={font=\scriptsize, yshift=2mm},
+  ymin=0, ymax=14.5,
+  nodes near coords, nodes near coords style={font=\scriptsize, yshift=1.5mm},
   error bars/y dir=both, error bars/y explicit,
   grid=major, grid style={line width=.1pt, draw=gray!25},
-  enlarge x limits=0.18,
+  enlarge x limits=0.22,
 ]
 \addplot[fill=gray!45, postaction={pattern=north east lines}] coordinates {(Pre-fix,9.03) +- (0,0.38)};
 \addplot[fill=red!55, postaction={pattern=crosshatch dots}]  coordinates {(Flat pause,7.49) +- (0,0.59)};
