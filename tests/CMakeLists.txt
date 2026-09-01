@@ -10,6 +10,7 @@ FetchContent_MakeAvailable(googletest)
 
 add_executable(numaring_tests
   cache_alignment_test.cpp
+  queue_test.cpp
   ring_buffer_test.cpp
   topology_test.cpp
 )

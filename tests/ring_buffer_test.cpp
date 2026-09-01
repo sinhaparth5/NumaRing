@@ -76,6 +76,93 @@ TEST(NodeLocalRingBuffer, CurrentNodeIsAlwaysConstructible) {
   EXPECT_TRUE(ring.try_enqueue(1));
 }
 
+TEST(NodeLocalRingBuffer, BulkDequeueOnEmptyReturnsZero) {
+  numaring::NodeLocalRingBuffer<int> ring(8);
+  int out[4];
+  EXPECT_EQ(ring.try_dequeue_bulk(out, 4), 0u);
+}
+
+TEST(NodeLocalRingBuffer, BulkEnqueueThenBulkDequeueRoundTrips) {
+  numaring::NodeLocalRingBuffer<int> ring(16);
+  int in[6] = {10, 11, 12, 13, 14, 15};
+  ASSERT_EQ(ring.try_enqueue_bulk(in, 6), 6u);
+
+  int out[6] = {};
+  ASSERT_EQ(ring.try_dequeue_bulk(out, 6), 6u);
+  for (int i = 0; i < 6; ++i) {
+    EXPECT_EQ(out[i], 10 + i);
+  }
+}
+
+TEST(NodeLocalRingBuffer, BulkDequeueReturnsFewerThanMaxWhenPartiallyFilled) {
+  numaring::NodeLocalRingBuffer<int> ring(16);
+  for (int i = 0; i < 3; ++i) {
+    ASSERT_TRUE(ring.try_enqueue(i));
+  }
+
+  int out[8];
+  EXPECT_EQ(ring.try_dequeue_bulk(out, 8), 3u);
+  EXPECT_EQ(out[0], 0);
+  EXPECT_EQ(out[1], 1);
+  EXPECT_EQ(out[2], 2);
+}
+
+TEST(NodeLocalRingBuffer, BulkEnqueueReturnsFewerThanMaxWhenNearlyFull) {
+  numaring::NodeLocalRingBuffer<int> ring(4);
+  ASSERT_TRUE(ring.try_enqueue(0));  // 1 of 4 slots used
+
+  int in[8] = {1, 2, 3, 4, 5, 6, 7, 8};
+  EXPECT_EQ(ring.try_enqueue_bulk(in, 8), 3u);  // only 3 slots left
+}
+
+TEST(NodeLocalRingBuffer, BulkTransferMatchesSingleItemSemanticsUnderWraparound) {
+  // Bulk claims share the exact same sequence-number bookkeeping as
+  // the single-item path (see count_ready()), so mixing the two
+  // across many laps must never desync.
+  numaring::NodeLocalRingBuffer<int> ring(8);
+  int next_expected = 0;
+  for (int lap = 0; lap < 50; ++lap) {
+    int in[3] = {next_expected, next_expected + 1, next_expected + 2};
+    ASSERT_EQ(ring.try_enqueue_bulk(in, 3), 3u);
+    ASSERT_TRUE(ring.try_enqueue(next_expected + 3));
+
+    int out[4] = {};
+    ASSERT_EQ(ring.try_dequeue_bulk(out, 4), 4u);
+    for (int i = 0; i < 4; ++i) {
+      EXPECT_EQ(out[i], next_expected + i);
+    }
+    next_expected += 4;
+  }
+}
+
+TEST(NodeLocalRingBuffer, CrossInstanceBulkTransfer) {
+  // Exercises exactly the mechanism Queue<T>'s cross-node work
+  // stealing (queue.hpp) relies on — moving a batch out of one ring
+  // via try_dequeue_bulk() and into a *different* ring via
+  // try_enqueue_bulk() — without needing node_count() > 1, since
+  // both rings here are plain independent instances.
+  numaring::NodeLocalRingBuffer<int> source(16);
+  numaring::NodeLocalRingBuffer<int> destination(16);
+  for (int i = 0; i < 10; ++i) {
+    ASSERT_TRUE(source.try_enqueue(i));
+  }
+
+  int batch[16];
+  const std::size_t taken = source.try_dequeue_bulk(batch, 16);
+  ASSERT_EQ(taken, 10u);
+  const std::size_t placed = destination.try_enqueue_bulk(batch, taken);
+  ASSERT_EQ(placed, 10u);
+
+  int leftover;
+  EXPECT_FALSE(source.try_dequeue(leftover));
+
+  int out = -1;
+  for (int i = 0; i < 10; ++i) {
+    ASSERT_TRUE(destination.try_dequeue(out));
+    EXPECT_EQ(out, i);
+  }
+}
+
 namespace {
 
 // Stress test: several producers and consumers hammering a small

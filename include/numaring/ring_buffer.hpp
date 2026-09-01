@@ -81,8 +81,84 @@ class NodeLocalRingBuffer {
   // NUMA node (false on the non-NUMA fallback path).
   bool is_numa_local() const noexcept { return storage_.is_numa_allocated(); }
 
+  // On failure (queue full), `value` is left completely untouched —
+  // not just "valid but unspecified" — so callers can retry the
+  // exact same value elsewhere (e.g. Queue<T>'s cross-node overflow
+  // handling in queue.hpp) without a fallback copy.
   bool try_enqueue(const T& value) { return enqueue_impl(value); }
   bool try_enqueue(T&& value) { return enqueue_impl(std::move(value)); }
+
+  // Attempts to claim up to `max_count` contiguous ready slots with
+  // a single CAS on the shared dequeue position — one atomic
+  // read-modify-write touching the hot, cross-thread-contended
+  // position counter instead of one per item — then moves each
+  // claimed item into `out[0..return value)`. Returns the number
+  // actually dequeued (0 if empty); can be less than `max_count`
+  // when fewer than that are currently available.
+  //
+  // This is the "batched cross-node transfer" primitive from
+  // docs/NumaRing Theory.pdf: moving a batch of N items this way
+  // costs one CAS on this counter versus N CASes for N individual
+  // try_dequeue() calls (e.g. 1 vs 16 → 93.75% fewer RMWs on the
+  // line every other core on this queue is also contending for).
+  // The per-slot sequence loads/stores below still touch N separate
+  // (already thread-local-ish, non-contended) cache lines either
+  // way — batching targets the one shared counter, not those.
+  std::size_t try_dequeue_bulk(T* out, std::size_t max_count) {
+    if (max_count == 0) {
+      return 0;
+    }
+    std::size_t pos = dequeue_pos_.load(std::memory_order_relaxed);
+    std::size_t count;
+    for (;;) {
+      count = count_ready(pos, max_count, /*for_dequeue=*/true);
+      if (count == 0) {
+        return 0;  // empty
+      }
+      if (dequeue_pos_.compare_exchange_weak(pos, pos + count, std::memory_order_relaxed,
+                                              std::memory_order_relaxed)) {
+        break;
+      }
+      // CAS failed — another consumer moved dequeue_pos_ first (pos
+      // was refreshed to the new value); recompute readiness from
+      // there and retry.
+    }
+    for (std::size_t i = 0; i < count; ++i) {
+      Slot& slot = slots_[(pos + i) & mask_];
+      out[i] = std::move(slot.value);
+      slot.sequence.get().store(pos + i + mask_ + 1, std::memory_order_release);
+    }
+    return count;
+  }
+
+  // Symmetric to try_dequeue_bulk(): claims up to `max_count`
+  // contiguous free slots with a single CAS on the shared enqueue
+  // position, then moves `in[0..return value)` into them. Returns
+  // the number actually enqueued (0 if full); can be less than
+  // `max_count` when fewer slots are currently free.
+  std::size_t try_enqueue_bulk(T* in, std::size_t max_count) {
+    if (max_count == 0) {
+      return 0;
+    }
+    std::size_t pos = enqueue_pos_.load(std::memory_order_relaxed);
+    std::size_t count;
+    for (;;) {
+      count = count_ready(pos, max_count, /*for_dequeue=*/false);
+      if (count == 0) {
+        return 0;  // full
+      }
+      if (enqueue_pos_.compare_exchange_weak(pos, pos + count, std::memory_order_relaxed,
+                                              std::memory_order_relaxed)) {
+        break;
+      }
+    }
+    for (std::size_t i = 0; i < count; ++i) {
+      Slot& slot = slots_[(pos + i) & mask_];
+      slot.value = std::move(in[i]);
+      slot.sequence.get().store(pos + i + 1, std::memory_order_release);
+    }
+    return count;
+  }
 
   // Dequeues into `out`. Returns false if the queue is empty.
   bool try_dequeue(T& out) {
@@ -145,6 +221,29 @@ class NodeLocalRingBuffer {
     slot->value = std::forward<U>(value);
     slot->sequence.get().store(pos + 1, std::memory_order_release);
     return true;
+  }
+
+  // Counts how many contiguous slots starting at `pos` are ready to
+  // claim (up to `max_count`, and never more than one full lap),
+  // without claiming anything. Used to decide how big a batch to
+  // attempt before the actual CAS; if the CAS in the caller fails
+  // because another thread moved the position counter first, the
+  // caller re-derives `pos` and calls this again — so a stale count
+  // observed here is always re-validated by that CAS, never acted on
+  // directly. See try_dequeue_bulk() / try_enqueue_bulk().
+  std::size_t count_ready(std::size_t pos, std::size_t max_count, bool for_dequeue) const noexcept {
+    std::size_t count = 0;
+    const std::size_t limit = max_count < capacity() ? max_count : capacity();
+    while (count < limit) {
+      const Slot& slot = slots_[(pos + count) & mask_];
+      const std::size_t seq = slot.sequence.get().load(std::memory_order_acquire);
+      const std::size_t expected = for_dequeue ? pos + count + 1 : pos + count;
+      if (seq != expected) {
+        break;
+      }
+      ++count;
+    }
+    return count;
   }
 
   void prefetch_slot(std::size_t pos) const noexcept {
