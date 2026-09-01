@@ -33,6 +33,21 @@ namespace numaring {
 // whose turn it is, so producers/consumers only contend on the slot
 // they actually land on rather than CAS-looping a single shared
 // head/tail cache line.
+//
+// The CAS retry loops below intentionally have no pause/backoff.
+// Phase 5 (docs/PHASE5_RESULTS.md) tried both a flat cpu_relax()-per-
+// retry version and a growing bounded-exponential-backoff version and
+// measured both on real 2-node NUMA hardware: both *helped* tail
+// latency in the instrumented benchmark suite, but both also *cost*
+// real, repeatable raw throughput (~17-30%, with the "smarter"
+// exponential version costing more, not less) in an uninstrumented
+// sustained-load driver — under true wall-to-wall sustained
+// contention (no pacing between a thread's own retries), the fastest
+// thing a losing CAS attempt can do is retry immediately, since the
+// atomic RMW itself already serializes access via cache coherence.
+// Reverted. Documented here rather than silently dropped, since it's
+// a reasonable thing to try again and not worth re-discovering from
+// scratch.
 template <typename T>
 class NodeLocalRingBuffer {
   static_assert(std::is_default_constructible_v<T>,
@@ -81,6 +96,19 @@ class NodeLocalRingBuffer {
   // NUMA node (false on the non-NUMA fallback path).
   bool is_numa_local() const noexcept { return storage_.is_numa_allocated(); }
 
+  // A racy snapshot of how many items are currently enqueued — two
+  // relaxed loads, no CAS, no synchronization with concurrent
+  // enqueuers/dequeuers. Not meant for correctness decisions (the
+  // real count can change the instant this returns); it exists for
+  // heuristics like Queue<T>'s work-stealing candidate selection,
+  // where "is this queue worth stealing from at all" only needs to be
+  // approximately right.
+  std::size_t approx_size() const noexcept {
+    const std::size_t enq = enqueue_pos_.load(std::memory_order_relaxed);
+    const std::size_t deq = dequeue_pos_.load(std::memory_order_relaxed);
+    return enq >= deq ? enq - deq : 0;
+  }
+
   // On failure (queue full), `value` is left completely untouched —
   // not just "valid but unspecified" — so callers can retry the
   // exact same value elsewhere (e.g. Queue<T>'s cross-node overflow
@@ -121,7 +149,10 @@ class NodeLocalRingBuffer {
       }
       // CAS failed — another consumer moved dequeue_pos_ first (pos
       // was refreshed to the new value); recompute readiness from
-      // there and retry.
+      // there and retry. (Phase 5 tried a pause-based backoff here;
+      // measured it costing real throughput under sustained
+      // contention — see the class-level comment on why there's no
+      // backoff in this loop.)
     }
     for (std::size_t i = 0; i < count; ++i) {
       Slot& slot = slots_[(pos + i) & mask_];

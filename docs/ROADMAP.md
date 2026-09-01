@@ -36,11 +36,26 @@ Checklist form of `docs/NumaRing ROADMAP.pdf`. Work through phases in order — 
 
 ## Phase 5 — Microarchitectural Profiling & Benchmarking
 
-- [ ] Throughput & tail-latency suite (Google Benchmark; p95/p99/p99.9; 1 → 32+ threads)
-- [ ] Baseline comparisons: `boost::lockfree::queue`, moodycamel `ConcurrentQueue`, mutex-based queue
-- [ ] `perf c2c` run: confirm >85% reduction in cross-socket HITM cache invalidations
-- [ ] `numastat` run: confirm >98% local NUMA memory hit ratio
-- [ ] Target validation: >120M ops/sec throughput @ 32+ threads, sub-100ns tail latency
+- [x] Throughput & tail-latency suite (Google Benchmark; p95/p99/p99.9; 1 → 32+ threads) — built
+      and run on real 2-node NUMA hardware; see `docs/PHASE5_RESULTS.md`
+- [x] Baseline comparisons: `boost::lockfree::queue`, moodycamel `ConcurrentQueue`, mutex-based queue
+- [ ] `perf c2c` run: confirm >85% reduction in cross-socket HITM cache invalidations — **blocked**,
+      no hardware PMU available on any vPMU-eligible machine type reachable under this project's
+      32-vCPU quota; see `docs/PHASE5_RESULTS.md` §3
+- [x] `numastat` run: confirm >98% local NUMA memory hit ratio — 99.9999%/100% measured (with
+      caveats — see `docs/PHASE5_RESULTS.md` §4)
+- [ ] Target validation: >120M ops/sec throughput @ 32 threads (this project's GCP quota caps at 32
+      vCPUs total — nothing higher was reachable), sub-100ns tail latency — **still not met** after
+      two rounds of real fixes: caching the `current_node()` routing lookup (~61x faster per-call)
+      and then fixing work-stealing contention (de-shared round-robin candidate selection, steal-
+      threshold hysteresis). Same-host controlled measurements: 32-thread throughput up ~1.23x,
+      p50 latency down ~202x, p99 down ~3.1x — real, verified gains, still nowhere near 120M
+      ops/sec. Single-op latency (16.2ns uncontended) meets the tail-latency target on its own; end-
+      to-end queueing latency under 32-thread saturation does not, though it improved by orders of
+      magnitude. A CPU-pause backoff was also tried and reverted — it helped instrumented latency
+      but measurably cost real throughput under true sustained contention. Full numbers and
+      methodology (including a caught-and-corrected cross-host measurement mistake) are in
+      `docs/PHASE5_RESULTS.md` §1-2, §5-7
 
 ## Phase 6 — Paper Composition & Publication Preparation
 
