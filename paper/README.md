@@ -6,9 +6,11 @@
 make
 ```
 
-Requires `pdflatex` and `bibtex` (TeX Live; the `pgfplots`, `booktabs`, `siunitx`, and `natbib`
-packages). `make clean` removes build artifacts (`main.pdf` is left in place — commit it alongside
-`main.tex` so the paper is readable without a LaTeX toolchain).
+Formatted for IEEE Computer Society journals (the `IEEEtran` class, `journal,compsoc` options —
+the format IEEE Transactions on Parallel and Distributed Systems uses). Requires `pdflatex` and
+`bibtex` (TeX Live; the `IEEEtran` class and `.bst`, plus `pgfplots`, `booktabs`, and `siunitx`).
+`make clean` removes build artifacts (`main.pdf` is left in place — commit it alongside `main.tex`
+so the paper is readable without a LaTeX toolchain).
 
 `data/*.dat` holds the exact same-host benchmark numbers the figures and tables in `main.tex` plot
 — sourced from the runs documented in `docs/PHASE5_RESULTS.md`. To regenerate `postfix_*.dat` from
