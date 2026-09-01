@@ -3,9 +3,9 @@
 #include "numaring/ring_buffer.hpp"
 #include "numaring/topology.hpp"
 
-#include <atomic>
 #include <cassert>
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <thread>
 #include <type_traits>
@@ -125,7 +125,21 @@ class Queue {
   // other thread filled `to` in between), the leftover items go back
   // onto `from`, which just freed exactly that many slots, so the
   // retry below almost always succeeds on its first attempt.
+  //
+  // Hysteresis: skips the attempt entirely if `from` doesn't clearly
+  // have enough to offer (< 2x batch_size_). Under sustained
+  // saturation, several threads can end up racing to steal from the
+  // same near-empty source at once; each only has a handful of ready
+  // slots to fight over, so most of those racing CAS attempts in
+  // try_dequeue_bulk are doomed to fail and retry. approx_size() is a
+  // racy snapshot (see its doc comment) — that's fine here, this is a
+  // heuristic gate, not a correctness check: a stale "no" just sends
+  // the caller to Queue's existing single-item fallback loop instead
+  // (see try_enqueue/try_dequeue below), never a wrong result.
   std::size_t transfer_batch(NodeLocalRingBuffer<T>& from, NodeLocalRingBuffer<T>& to) {
+    if (from.approx_size() < 2 * batch_size_) {
+      return 0;
+    }
     T batch[kMaxBatchSize];
     const std::size_t taken = from.try_dequeue_bulk(batch, batch_size_);
     if (taken == 0) {
@@ -163,12 +177,20 @@ class Queue {
     if (n <= 1) {
       return 0;  // no other node to trade with
     }
-    // round_robin_ is itself a shared, cross-thread atomic — but
-    // it's only touched on this already-slow overflow/underflow
-    // path, never on the per-item enqueue/dequeue hot path, so the
-    // contention it adds is negligible next to what it buys: spread
-    // instead of every thread always probing node 0 first.
-    const std::size_t start = round_robin_.fetch_add(1, std::memory_order_relaxed);
+    // Candidate order starts from thread-local state, not a shared
+    // counter: an earlier version used a single atomic round_robin_
+    // fetch_add()'d by every thread on every overflow/underflow,
+    // which under saturation (e.g. all producers overflowing at
+    // once) meant every one of those threads contended on that same
+    // cache line in addition to the actual cross-node transfer work.
+    // thread_local state spreads the starting candidate across
+    // threads (a different hash-based seed per thread, advancing
+    // independently after) with zero cross-thread traffic — no
+    // atomic at all, since nothing here needs to be exactly fair,
+    // just spread out.
+    thread_local std::size_t local_start =
+        std::hash<std::thread::id>{}(std::this_thread::get_id());
+    const std::size_t start = local_start++;
     for (std::size_t offset = 0; offset < n; ++offset) {
       NodeLocalRingBuffer<T>& candidate = *sub_queues_[(start + offset) % n];
       if (&candidate == &self) {
@@ -184,7 +206,6 @@ class Queue {
 
   std::vector<std::unique_ptr<NodeLocalRingBuffer<T>>> sub_queues_;
   std::size_t batch_size_;
-  std::atomic<std::size_t> round_robin_{0};
 };
 
 }  // namespace numaring

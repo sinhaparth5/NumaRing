@@ -46,11 +46,16 @@ Checklist form of `docs/NumaRing ROADMAP.pdf`. Work through phases in order — 
       caveats — see `docs/PHASE5_RESULTS.md` §4)
 - [ ] Target validation: >120M ops/sec throughput @ 32 threads (this project's GCP quota caps at 32
       vCPUs total — nothing higher was reachable), sub-100ns tail latency — **still not met** after
-      fixing the `current_node()` routing-overhead bottleneck the initial profiling pass found
-      (~61x faster per-call, real ~1.07-1.12x end-to-end gain at 32 threads); single-op latency
-      (16.6ns uncontended) does meet the tail-latency target, end-to-end queueing latency under
-      32-thread saturation does not. Real numbers, the fix, and the current best guess at the next
-      bottleneck (cross-node work-stealing contention) are in `docs/PHASE5_RESULTS.md` §1-2, §5-6
+      two rounds of real fixes: caching the `current_node()` routing lookup (~61x faster per-call)
+      and then fixing work-stealing contention (de-shared round-robin candidate selection, steal-
+      threshold hysteresis). Same-host controlled measurements: 32-thread throughput up ~1.23x,
+      p50 latency down ~202x, p99 down ~3.1x — real, verified gains, still nowhere near 120M
+      ops/sec. Single-op latency (16.2ns uncontended) meets the tail-latency target on its own; end-
+      to-end queueing latency under 32-thread saturation does not, though it improved by orders of
+      magnitude. A CPU-pause backoff was also tried and reverted — it helped instrumented latency
+      but measurably cost real throughput under true sustained contention. Full numbers and
+      methodology (including a caught-and-corrected cross-host measurement mistake) are in
+      `docs/PHASE5_RESULTS.md` §1-2, §5-7
 
 ## Phase 6 — Paper Composition & Publication Preparation
 
