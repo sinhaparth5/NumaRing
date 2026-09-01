@@ -59,7 +59,12 @@ Checklist form of `docs/NumaRing ROADMAP.pdf`. Work through phases in order — 
 
 ## Phase 6 — Paper Composition & Publication Preparation
 
-- [ ] Manuscript draft: motivation, system design, formal queue semantics, evaluation
-- [ ] Benchmark visualization: throughput scaling, tail latency distributions, cache invalidation charts
+- [x] Manuscript draft: motivation, system design, formal queue semantics, evaluation —
+      `paper/main.tex` (`paper/main.pdf`), built from the real same-host Phase 5 data in
+      `paper/data/`; see `paper/README.md` to rebuild
+- [x] Benchmark visualization: throughput scaling, tail latency distributions — Figures 1-2 in
+      the paper, both from real measured data. Cache invalidation charts (`perf c2c`) are **not
+      included** — that data was never obtainable (see `docs/PHASE5_RESULTS.md` §3 and the
+      paper's §5.6); the paper documents the limitation instead of fabricating the chart
 - [ ] Package repository as a reproducible artifact
 - [ ] Target venue submission (USENIX ATC / PPoPP / IEEE TPDS)

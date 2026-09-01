@@ -1,0 +1,5 @@
+variant run1 run2 run3 mean
+{Pre-fix} 8.65 9.41 9.02 9.03
+{Flat pause} 7.44 8.08 6.95 7.49
+{Exp.\ backoff} 7.25 5.44 6.47 6.39
+{Final (no backoff)} 9.82 8.24 11.03 9.70

@@ -4,13 +4,23 @@ CMakeCache.txt
 CMakeFiles
 CMakeScripts
 Testing
-Makefile
+/Makefile
 cmake_install.cmake
 install_manifest.txt
 compile_commands.json
 CTestTestfile.cmake
 _deps
 CMakeUserPresets.json
+
+# LaTeX build artifacts (paper/) — main.pdf itself is committed so the
+# paper is readable without a LaTeX toolchain.
+paper/*.aux
+paper/*.bbl
+paper/*.blg
+paper/*.log
+paper/*.out
+paper/*.fls
+paper/*.fdb_latexmk
 
 # CLion
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
