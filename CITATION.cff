@@ -12,6 +12,12 @@ authors:
     affiliation: "Independent Researcher, Oxford, United Kingdom"
 repository-code: "https://github.com/sinhaparth5/NumaRing"
 url: "https://github.com/sinhaparth5/NumaRing"
+identifiers:
+  - type: doi
+    value: "10.5281/zenodo.22232854"
+    description: "Concept DOI — always resolves to the latest archived version."
+version: 0.1.0
+date-released: "2026-09-01"
 license: Apache-2.0
 keywords:
   - numa
