@@ -1,0 +1,41 @@
+cff-version: 1.2.0
+message: >-
+  If you use this software, cite it using the metadata below. If you use
+  results or claims from the accompanying paper, cite the preferred
+  citation instead.
+title: NumaRing
+type: software
+authors:
+  - family-names: Sinha
+    given-names: Parth Kumar
+    orcid: "https://orcid.org/0009-0002-3120-9301"
+    affiliation: "Independent Researcher, Oxford, United Kingdom"
+repository-code: "https://github.com/sinhaparth5/NumaRing"
+url: "https://github.com/sinhaparth5/NumaRing"
+license: Apache-2.0
+keywords:
+  - numa
+  - lock-free
+  - mpmc-queue
+  - concurrent-data-structures
+  - cache-conscious
+  - work-stealing
+  - cpp20
+abstract: >-
+  A cache-conscious, topology-aware multi-producer multi-consumer (MPMC)
+  queue for high-core NUMA server CPUs. Gives each NUMA node its own
+  bounded ring buffer, routes producers and consumers to their own node's
+  ring, and moves work between nodes in batches instead of item by item.
+preferred-citation:
+  type: unpublished
+  title: >-
+    NumaRing: Topology-Aware Routing for NUMA-Local MPMC Queues, and What
+    Broke When We Optimized It
+  authors:
+    - family-names: Sinha
+      given-names: Parth Kumar
+      orcid: "https://orcid.org/0009-0002-3120-9301"
+      affiliation: "Independent Researcher, Oxford, United Kingdom"
+  year: 2026
+  url: "https://github.com/sinhaparth5/NumaRing/blob/master/paper/main.pdf"
+  notes: Preprint. Not yet submitted to or accepted by a venue.

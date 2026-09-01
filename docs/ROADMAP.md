@@ -66,5 +66,8 @@ Checklist form of `docs/NumaRing ROADMAP.pdf`. Work through phases in order — 
       the paper, both from real measured data. Cache invalidation charts (`perf c2c`) are **not
       included** — that data was never obtainable (see `docs/PHASE5_RESULTS.md` §3 and the
       paper's §5.6); the paper documents the limitation instead of fabricating the chart
-- [ ] Package repository as a reproducible artifact
+- [ ] Package repository as a reproducible artifact — `CITATION.cff` (validated against the CFF
+      1.2.0 schema with `cffconvert`) and `.zenodo.json` are in place so a GitHub release archives
+      to Zenodo with correct metadata and mints a DOI; the release itself and the Zenodo-GitHub
+      toggle are the user's to do, so leaving this unchecked until a real DOI exists
 - [ ] Target venue submission (USENIX ATC / PPoPP / IEEE TPDS)
