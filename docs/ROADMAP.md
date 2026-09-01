@@ -36,11 +36,18 @@ Checklist form of `docs/NumaRing ROADMAP.pdf`. Work through phases in order — 
 
 ## Phase 5 — Microarchitectural Profiling & Benchmarking
 
-- [ ] Throughput & tail-latency suite (Google Benchmark; p95/p99/p99.9; 1 → 32+ threads)
-- [ ] Baseline comparisons: `boost::lockfree::queue`, moodycamel `ConcurrentQueue`, mutex-based queue
-- [ ] `perf c2c` run: confirm >85% reduction in cross-socket HITM cache invalidations
-- [ ] `numastat` run: confirm >98% local NUMA memory hit ratio
-- [ ] Target validation: >120M ops/sec throughput @ 32+ threads, sub-100ns tail latency
+- [x] Throughput & tail-latency suite (Google Benchmark; p95/p99/p99.9; 1 → 32+ threads) — built
+      and run on real 2-node NUMA hardware; see `docs/PHASE5_RESULTS.md`
+- [x] Baseline comparisons: `boost::lockfree::queue`, moodycamel `ConcurrentQueue`, mutex-based queue
+- [ ] `perf c2c` run: confirm >85% reduction in cross-socket HITM cache invalidations — **blocked**,
+      no hardware PMU available on any vPMU-eligible machine type reachable under this project's
+      32-vCPU quota; see `docs/PHASE5_RESULTS.md` §3
+- [x] `numastat` run: confirm >98% local NUMA memory hit ratio — 99.9999%/100% measured (with
+      caveats — see `docs/PHASE5_RESULTS.md` §4)
+- [ ] Target validation: >120M ops/sec throughput @ 32+ threads, sub-100ns tail latency — **not
+      met** at either metric under sustained cross-socket load; single-op latency (16–192ns) does
+      meet the tail-latency target. Real measured numbers and the `current_node()`-overhead root
+      cause are in `docs/PHASE5_RESULTS.md` §1–2 and §5
 
 ## Phase 6 — Paper Composition & Publication Preparation
 
