@@ -28,9 +28,11 @@ Checklist form of `docs/NumaRing ROADMAP.pdf`. Work through phases in order — 
 
 ## Phase 4 — Batched Cross-Node Work Stealing & Load Balancing
 
-- [ ] Overflow/underflow detection (fast local capacity checks)
-- [ ] Batched chunk transfer primitive (16–32 items) as a single atomic update
-- [ ] Verify ≥93.75% reduction in inter-socket CAS ops vs. element-by-element transfer
+- [x] Overflow/underflow detection (fast local capacity checks)
+- [x] Batched chunk transfer primitive (16–32 items) as a single atomic update
+- [x] Verify ≥93.75% reduction in inter-socket CAS ops vs. element-by-element transfer — mechanism verified
+      (1 CAS vs 16), throughput proxy benchmarked locally; real cross-socket `perf c2c` confirmation is Phase 5,
+      on real multi-node hardware
 
 ## Phase 5 — Microarchitectural Profiling & Benchmarking
 
