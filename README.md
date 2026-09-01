@@ -4,6 +4,8 @@
   <img alt="NumaRing" src="assets/logo-light.svg" width="420">
 </picture>
 
+[![DOI](https://zenodo.org/badge/1353374159.svg)](https://doi.org/10.5281/zenodo.22232854)
+
 A cache-conscious, topology-aware MPMC (multi-producer multi-consumer) queue for high-core NUMA server CPUs.
 See `docs/NumaRing Theory.pdf` for the design rationale and `docs/ROADMAP.md` for build status.
 The evaluation and results are written up in `paper/main.pdf` (source: `paper/main.tex`).
