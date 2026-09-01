@@ -15,6 +15,8 @@ option(NUMARING_BUILD_TESTS "Build numaring tests" ON)
 option(NUMARING_BUILD_BENCHMARKS "Build numaring benchmarks" ON)
 
 find_package(NUMA REQUIRED)
+set(THREADS_PREFER_PTHREAD_FLAG ON)
+find_package(Threads REQUIRED)
 
 # numaring is header-only.
 add_library(numaring INTERFACE)
@@ -25,7 +27,7 @@ target_include_directories(numaring INTERFACE
   $<INSTALL_INTERFACE:include>
 )
 target_compile_features(numaring INTERFACE cxx_std_20)
-target_link_libraries(numaring INTERFACE NUMA::NUMA)
+target_link_libraries(numaring INTERFACE NUMA::NUMA Threads::Threads)
 
 # -O3 -march=native per the roadmap. GCC/Clang only — MSVC doesn't
 # understand these flags, and this project targets Linux/NUMA hosts

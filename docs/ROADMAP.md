@@ -21,10 +21,10 @@ Checklist form of `docs/NumaRing ROADMAP.pdf`. Work through phases in order — 
 
 ## Phase 3 — Node-Local Ring Buffer Core
 
-- [ ] Node-local queue memory allocation via `numa_alloc_onnode()` (zero remote DRAM access)
-- [ ] Bounded lock-free ring buffer slot sequence tracking
-- [ ] Acquire-release atomics (`std::memory_order_acquire` / `std::memory_order_release`)
-- [ ] Software prefetch integration (`_mm_prefetch`) ahead of consumer reads
+- [x] Node-local queue memory allocation via `numa_alloc_onnode()` (zero remote DRAM access)
+- [x] Bounded lock-free ring buffer slot sequence tracking
+- [x] Acquire-release atomics (`std::memory_order_acquire` / `std::memory_order_release`)
+- [x] Software prefetch integration (`_mm_prefetch`) ahead of consumer reads
 
 ## Phase 4 — Batched Cross-Node Work Stealing & Load Balancing
 
