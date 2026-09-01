@@ -44,10 +44,13 @@ Checklist form of `docs/NumaRing ROADMAP.pdf`. Work through phases in order — 
       32-vCPU quota; see `docs/PHASE5_RESULTS.md` §3
 - [x] `numastat` run: confirm >98% local NUMA memory hit ratio — 99.9999%/100% measured (with
       caveats — see `docs/PHASE5_RESULTS.md` §4)
-- [ ] Target validation: >120M ops/sec throughput @ 32+ threads, sub-100ns tail latency — **not
-      met** at either metric under sustained cross-socket load; single-op latency (16–192ns) does
-      meet the tail-latency target. Real measured numbers and the `current_node()`-overhead root
-      cause are in `docs/PHASE5_RESULTS.md` §1–2 and §5
+- [ ] Target validation: >120M ops/sec throughput @ 32 threads (this project's GCP quota caps at 32
+      vCPUs total — nothing higher was reachable), sub-100ns tail latency — **still not met** after
+      fixing the `current_node()` routing-overhead bottleneck the initial profiling pass found
+      (~61x faster per-call, real ~1.07-1.12x end-to-end gain at 32 threads); single-op latency
+      (16.6ns uncontended) does meet the tail-latency target, end-to-end queueing latency under
+      32-thread saturation does not. Real numbers, the fix, and the current best guess at the next
+      bottleneck (cross-node work-stealing contention) are in `docs/PHASE5_RESULTS.md` §1-2, §5-6
 
 ## Phase 6 — Paper Composition & Publication Preparation
 

@@ -2,6 +2,10 @@
 
 #include <numa.h>
 #include <sched.h>
+#include <unistd.h>
+
+#include <cstddef>
+#include <vector>
 
 namespace numaring {
 
@@ -15,6 +19,40 @@ namespace detail {
 inline bool numa_available_once() noexcept {
   static const bool available = (::numa_available() != -1);
   return available;
+}
+
+// CPU -> NUMA node lookup table, built once. Phase 5 profiling
+// (docs/PHASE5_RESULTS.md) found ::numa_node_of_cpu() costs ~130ns
+// per call — a bitmask scan over every NUMA node done fresh every
+// time — and that current_node() (called on every single
+// Queue::try_enqueue/try_dequeue) was ~11-20x the cost of the ring
+// buffer operation it gates almost entirely because of this.
+//
+// Unlike thread-to-CPU placement (which migrates and must be
+// re-queried per operation — see current_node()'s comment),
+// CPU-to-node topology is fixed for the life of the process, so it's
+// safe to compute it once per CPU and cache it here: this cuts
+// node_of_cpu() to an O(1) array read with zero staleness risk,
+// since sched_getcpu() itself is still called fresh on every
+// current_node() call below.
+inline const std::vector<int>& cpu_to_node_table() {
+  static const std::vector<int> table = [] {
+    std::vector<int> t;
+    if (!numa_available_once()) {
+      return t;  // left empty — node_of_cpu() falls back to node 0 either way
+    }
+    const long configured_cpus = ::sysconf(_SC_NPROCESSORS_CONF);
+    if (configured_cpus <= 0) {
+      return t;  // couldn't determine CPU count — fall back per-call below
+    }
+    t.resize(static_cast<std::size_t>(configured_cpus));
+    for (std::size_t cpu = 0; cpu < t.size(); ++cpu) {
+      const int node = ::numa_node_of_cpu(static_cast<int>(cpu));
+      t[cpu] = node >= 0 ? node : 0;
+    }
+    return t;
+  }();
+  return table;
 }
 
 }  // namespace detail
@@ -48,6 +86,13 @@ inline int node_of_cpu(int cpu) noexcept {
   if (!numa_supported() || cpu < 0) {
     return 0;
   }
+  const auto& table = detail::cpu_to_node_table();
+  if (static_cast<std::size_t>(cpu) < table.size()) {
+    return table[static_cast<std::size_t>(cpu)];
+  }
+  // cpu wasn't covered by the table built at startup (e.g. hot-added
+  // after this process started) — fall back to the direct libnuma
+  // call rather than guess.
   const int node = ::numa_node_of_cpu(cpu);
   // numa_node_of_cpu() returns -1 on error (e.g. an offline or
   // out-of-range cpu); route those to node 0 rather than propagate
