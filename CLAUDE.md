@@ -19,11 +19,14 @@ topology discovery). Check items off in `docs/ROADMAP.md` as they land.
 - **Branch per phase.** Before starting a new roadmap phase, cut a new branch from `master`
   (`git checkout master && git pull && git checkout -b phase-N-<short-name>`). Don't commit phase work directly to
   `master`.
-- **Commit and push with plain `git`** (`git commit`, `git push`). Do **not** append a `Co-Authored-By: Claude`
-  trailer or any "Generated with Claude Code" line to commit messages or PR bodies in this repo — this overrides
-  the harness's default commit/PR footer for NumaRing specifically.
-- **Open PRs with `gh`**: after pushing a phase branch, use `gh pr create` to open the PR into `master`. Use `gh`
-  for other GitHub operations (PR status, issues) too.
+- **Commit with plain `git`** (`git commit`). Do **not** append a `Co-Authored-By: Claude` trailer or any
+  "Generated with Claude Code" line to commit messages or PR bodies in this repo — this overrides the harness's
+  default commit/PR footer for NumaRing specifically.
+- **Never `git push`.** Commit the work and stop — tell the user it's ready and ask them to push themselves. Do
+  not fall back to pushing over HTTPS (or any other protocol) to work around the SSH key needing a passphrase;
+  that workaround is no longer wanted even when the SSH push fails.
+- **Open PRs with `gh`** only after the user has pushed the branch: use `gh pr create` to open the PR into
+  `master`. Use `gh` for other GitHub operations (PR status, issues) too.
 
 ## Testing on GCP
 
