@@ -32,25 +32,21 @@ ORCID: \href{https://orcid.org/0009-0002-3120-9301}{0009-0002-3120-9301}
 \begin{abstract}
 Cache-coherence traffic across NUMA sockets, not the choice of lock-free algorithm, is the
 dominant cost in a shared-counter multi-producer multi-consumer (MPMC) queue once threads span
-more than one socket. We built NumaRing, a queue that gives each NUMA node its own bounded ring
-buffer, routes producers and consumers to the ring on their own node, and moves items between
-nodes in batches instead of one at a time. We evaluated it against
-\texttt{boost::lockfree::queue}, \texttt{moodycamel::ConcurrentQueue}, and a mutex-protected
-queue on a real two-socket machine, using a same-host controlled methodology after an initial
-cross-host comparison produced misleading numbers that we caught before drawing conclusions from
-them. Profiling found that our own topology-routing call cost \SI{183}{\nano\second} per
-operation, roughly eleven to twenty times the cost of the ring-buffer operation it gated. Caching
-the CPU-to-node lookup cut that call itself by 61$\times$ (\SI{183}{\nano\second} to
-\SI{2.97}{\nano\second}), and separately raised low-contention (2-thread) throughput by
-6 to 7$\times$ end to end, two different measurements of the same fix, not the same number twice. A
-second round of fixes to the cross-node work-stealing path removed an
-unnecessary shared contention point and added a steal-threshold check, cutting median latency at
-32 threads from \SI{1.69}{\milli\second} to \SI{8.4}{\micro\second} (a 202-fold drop) and p99 by
-3.1$\times$. We also tried CPU-pause backoff in the ring buffer's compare-and-swap retry loop and
-measured it costing 17 to 30 percent of raw throughput under true sustained contention; we
-reverted it and report why. Under a 32-vCPU cloud quota that limited us to two NUMA nodes,
-throughput at 32 threads stayed well short of the workload's original 120 million operations per
-second target. We report the improvements and the ceiling both, with the numbers behind each.
+more than one socket. Per-node sharding plus batched cross-node transfer is a known pattern, not a
+new algorithm; this paper is a case study of building one such queue, NumaRing, and of two
+profiling-driven bugs and one textbook optimization that made it worse, all found by measuring
+rather than assuming. Caching a per-operation topology lookup that turned out to cost
+\SI{183}{\nano\second} (eleven to twenty times the ring-buffer operation it gated) cut that cost by
+61$\times$ and raised low-contention throughput 6 to 7$\times$. A second bug in the cross-node
+work-stealing path, a shared atomic that every thread touched on every overflow, cut median
+latency at 32 threads by 202-fold once fixed. CPU-pause backoff, the standard fix for a contended
+compare-and-swap retry loop, cost 17 to 30 percent of raw throughput under true sustained
+contention instead of helping; we measured it, reverted it, and report why. The evaluation runs on
+a two-socket, 32-vCPU cloud instance, the largest topology a fixed compute quota let us reach, and
+we caught our own cross-host measurement error before trusting a number from it. Raw throughput at
+32 threads stayed far below the project's original design target, and nothing in the data says
+another round of fixes like these closes that gap on two sockets. Code, evaluation data, and the
+exact commits behind every before/after number in this paper are public.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -113,7 +109,11 @@ established the two-pointer, compare-and-swap-based design most later concurrent
 Vyukov's bounded MPMC queue \cite{vyukov_bounded_mpmc} adapts that idea to a fixed-size ring
 buffer: every slot carries its own sequence number, so a producer or consumer only contends on the
 one slot it is about to touch, and the shared state is reduced to two atomic position counters. We
-use Vyukov's algorithm as the node-local ring buffer inside NumaRing (Section~\ref{sec:ring}).
+use Vyukov's algorithm as the node-local ring buffer inside NumaRing (Section~\ref{sec:ring}) for a
+specific reason: it is bounded and array-based, which is what a fixed-capacity, NUMA-pinned
+per-node buffer needs. Faster unbounded designs exist, LCRQ \cite{morrison2013lcrq} chains
+CAS2-based segments to cut contention on x86, but an unbounded queue can grow its backing memory
+past the node it started on, which defeats the point of pinning it in the first place.
 \texttt{boost::lockfree::queue} \cite{boost_lockfree} and moodycamel's
 \texttt{ConcurrentQueue} \cite{desrochers2014moodycamel} are both mature, widely used C++ MPMC
 queues; neither is NUMA-topology-aware, and we use both as baselines in
@@ -215,7 +215,10 @@ is constructed for, so the memory a node's threads touch on the fast path is loc
 cross-socket fetch. Both position counters and the per-slot sequence numbers are padded to
 \SI{128}{\byte} (two cache lines) to prevent the L2 spatial prefetcher from pulling adjacent,
 independently-written lines into the same coherence unit, which would otherwise reintroduce false
-sharing that per-slot sequencing was supposed to eliminate.
+sharing that per-slot sequencing was supposed to eliminate. We did not measure false-sharing rates
+with and without this padding directly; that needs \texttt{perf c2c}, which Section~\ref{sec:eval}
+explains was not available on our test hardware. The padding follows a well-established rule
+(match cache-line size, avoid straddling) rather than a measurement specific to this design.
 
 \subsection{Topology-aware routing}
 \label{sec:topology}
@@ -224,7 +227,11 @@ A producer or consumer thread finds its own ring buffer by asking which NUMA nod
 running on (\texttt{sched\_getcpu()} plus a CPU-to-node lookup) and indexing into the per-node
 array of ring buffers with the result. This call happens on every single \texttt{try\_enqueue} and
 \texttt{try\_dequeue}, so its cost is not incidental; Section~\ref{sec:eval-routing} measures it
-directly and reports what we did about it.
+directly and reports what we did about it. The alternative is a thread-local cached node id,
+refreshed only when the thread migrates; that trades this per-operation query for a small window
+where a just-migrated thread routes to its old node until the next refresh. We kept the
+per-operation query and its guaranteed freshness, and instead attacked its cost directly
+(Section~\ref{sec:eval-routing}), rather than accept a staleness window to avoid it.
 
 \subsection{Batched cross-node work stealing}
 \label{sec:worksteal}
@@ -232,9 +239,12 @@ directly and reports what we did about it.
 When a thread's local ring buffer is full (on enqueue) or empty (on dequeue), \texttt{Queue<T>}
 does not fail immediately. It first tries to move a batch of items between the local ring and
 another node's ring, then retries the local operation. A batch transfer claims a contiguous run of
-slots with one compare-and-swap on each side instead of one compare-and-swap per item, so moving
-16 items this way costs 2 cross-node atomic operations instead of 32, a 93.75\% reduction on the
-line every other core sharing that ring buffer is also contending for. If the batch transfer
+slots with one compare-and-swap on each side instead of one compare-and-swap per item, so a batch
+of 16 costs 2 cross-node atomic operations instead of 32, an order of magnitude fewer touches on
+the line every other core sharing that ring buffer is also contending for. The single
+compare-and-swap that claims the whole contiguous range is the batch's linearization point: it
+either succeeds and every claimed slot becomes visible to other threads together, or it fails and
+none of them do, so a concurrent observer never sees a partial batch. If the batch transfer
 cannot move anything (every other node's ring is also full or also empty), \texttt{Queue<T>} falls
 back to a single-item attempt against every other node in turn before reporting failure to the
 caller, so correctness never depends on the fast batched path succeeding.
@@ -271,14 +281,23 @@ sequencing guarantee the local ring buffer provides.
 All numbers in this section come from a throwaway Google Compute Engine \texttt{n2-standard-32}
 instance running Ubuntu 24.04, built fresh for each measurement round and deleted afterward. The
 instance exposes 32 vCPUs split across two NUMA nodes, 16 vCPUs each, with a measured node distance
-of 20 (versus 10 within a node), confirmed with \texttt{numactl -{}-hardware} before every run. This
-is a hard ceiling, not a choice: the GCP project used for this work has a 32-vCPU total quota
-across every region, and every machine type we found that reliably exposes more than two NUMA
-nodes needs more vCPUs than that. We built with GCC~13 at \texttt{-O3 -march=native}, and compared
-against Boost's \texttt{lockfree::queue} (built with \texttt{fixed\_sized<true>} for a true bounded
-ring, matching NumaRing's own fixed capacity) and moodycamel's \texttt{ConcurrentQueue}, both at
-their latest stable release, plus a queue built from \texttt{std::mutex} and \texttt{std::deque} as
-the traditional-locking baseline.
+of 20 (versus 10 within a node), confirmed with \texttt{numactl -{}-hardware} before every run. Each
+node's CPU list splits into two groups of eight offset by sixteen (node 0: CPUs 0--7 and 16--23),
+the standard numbering for simultaneous multithreading, so hyperthreading was on: 8 physical cores
+and 16 logical CPUs per node. This is a hard ceiling, not a choice: the GCP project used for this
+work has a 32-vCPU total quota across every region, and every machine type we found that reliably
+exposes more than two NUMA nodes needs more vCPUs than that. We built with GCC~13 at
+\texttt{-O3 -march=native}, against Boost 1.90.0 (Ubuntu 24.04's \texttt{libboost-dev} package,
+\texttt{lockfree::queue} built with \texttt{fixed\_sized<true>} for a true bounded ring, matching
+NumaRing's own fixed capacity) and moodycamel's \texttt{ConcurrentQueue} at git tag \texttt{v1.0.4},
+plus a queue built from \texttt{std::mutex} and \texttt{std::deque} as the traditional-locking
+baseline. NumaRing itself ran with its default configuration throughout: a ring capacity of 4096
+slots per node and a work-stealing batch size of 16 items, neither varied in this evaluation.
+NumaRing is header-only C++20, Apache-2.0 licensed, and public at
+\url{https://github.com/sinhaparth5/NumaRing} (archived at
+\url{https://doi.org/10.5281/zenodo.22232854}); every before/after comparison in this paper is the
+same two commits, \texttt{e33ef43} (before) and \texttt{e8f0093} (after), built and run back to
+back on the same instance.
 
 The workload pins one producer and one consumer to each NUMA node and has every producer enqueue a
 monotonic timestamp as its payload; a consumer's latency sample is the wall-clock time between that
@@ -331,7 +350,10 @@ Metric & Before & After & Factor \\
 
 For context, a single-threaded enqueue-dequeue round trip through the underlying ring buffer, with
 no routing call at all, costs \SI{16.2}{\nano\second}. Before this fix, routing alone cost more
-than eleven times that; after, it costs less than a fifth of it.
+than eleven times that; after, it costs less than a fifth of it. That 61$\times$ is the cost of one
+call in isolation; Table~\ref{tab:worksteal} in the next section reports what removing that cost
+did to end-to-end 2-thread throughput (roughly 6 to 7$\times$), a different measurement of the same
+fix, not the same number restated.
 
 \subsection{Work-stealing contention}
 \label{sec:eval-worksteal}
@@ -366,8 +388,8 @@ routing and work-stealing fixes.}
 Threads & \multicolumn{2}{c}{Throughput (M\,ops/s)} & \multicolumn{2}{c}{p50 latency} \\
  & Before & After & Before & After \\
 \midrule
-2  & 1.73  & 12.35 & \SI{3.48}{ms} & \SI{218}{\micro\second} \\
-32 & 0.260 & 0.321 & \SI{1.69}{ms} & \SI{8.4}{\micro\second} \\
+2  & 1.73  & 12.35 & \SI{3480}{\micro\second} & \SI{218}{\micro\second} \\
+32 & 0.260 & 0.321 & \SI{1690}{\micro\second} & \SI{8.4}{\micro\second} \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -406,7 +428,9 @@ different questions, and neither should be read as a correction of the other.
 \end{axis}
 \end{tikzpicture}
 \caption{Throughput vs.\ thread count, same host, current build. All four implementations run the
-identical timestamp-payload workload through the identical harness.}
+identical timestamp-payload workload through the same latency-tracking harness (a per-operation
+clock call, not a raw-throughput driver); Section~\ref{sec:eval-backoff} reports the much higher
+uninstrumented rate for the same NumaRing build.}
 \label{fig:scaling}
 \end{figure}
 
@@ -431,8 +455,9 @@ identical timestamp-payload workload through the identical harness.}
 \legend{NumaRing, Boost.Lockfree, moodycamel, Mutex+deque}
 \end{axis}
 \end{tikzpicture}
-\caption{p50/p95/p99/p99.9 latency at 32 threads, same host, current build. See
-Table~\ref{tab:tail32} for the exact values plotted.}
+\caption{p50/p95/p99/p99.9 latency at 32 threads, same host, current build. NumaRing has the lowest
+median; the mutex baseline (gray) has the lowest p99 and p99.9, the opposite ranking, at this
+thread count. See Table~\ref{tab:tail32} for the exact values plotted.}
 \label{fig:tail}
 \end{figure}
 
@@ -444,9 +469,9 @@ Table~\ref{tab:tail32} for the exact values plotted.}
 \toprule
 Implementation & p50 & p95 & p99 & p99.9 \\
 \midrule
-NumaRing        & \SI{8.4}{\micro\second}   & \SI{799}{\micro\second}  & \SI{1.23}{ms} & \SI{1.69}{ms} \\
-Boost.Lockfree  & \SI{3.99}{ms}  & \SI{4.40}{ms}  & \SI{4.45}{ms} & \SI{4.51}{ms} \\
-moodycamel      & \SI{4.42}{\micro\second}   & \SI{2.50}{ms}  & \SI{3.17}{ms} & \SI{4.19}{ms} \\
+NumaRing        & \SI{8.4}{\micro\second}   & \SI{799}{\micro\second}  & \SI{1230}{\micro\second} & \SI{1690}{\micro\second} \\
+Boost.Lockfree  & \SI{3990}{\micro\second}  & \SI{4400}{\micro\second}  & \SI{4450}{\micro\second} & \SI{4510}{\micro\second} \\
+moodycamel      & \SI{4.42}{\micro\second}   & \SI{2500}{\micro\second}  & \SI{3170}{\micro\second} & \SI{4190}{\micro\second} \\
 Mutex+deque     & \SI{43.3}{\micro\second}   & \SI{160}{\micro\second}  & \SI{227}{\micro\second} & \SI{290}{\micro\second} \\
 \bottomrule
 \end{tabular}
@@ -530,6 +555,12 @@ that improves on it.}
 \label{fig:backoff}
 \end{figure}
 
+The 9.70\,M ops/s in Table~\ref{tab:backoff} is the whole 32-thread system, enqueues and dequeues
+counted together (every successful \texttt{try\_enqueue} or \texttt{try\_dequeue} is one op,
+matching how the other tables in this paper count); per thread that is roughly 303{,}000 ops/s.
+The 0.321\,M items/s instrumented figure in Table~\ref{tab:worksteal} is around 10{,}000 items/s
+per thread by the same accounting, the clock call being the difference described above.
+
 Both backoff variants reduced raw throughput, and the more sophisticated one reduced it further,
 not less. Under this driver's true wall-to-wall contention, with no pacing between a thread's own
 retries, the fastest path back to success for a losing compare-and-swap attempt is to retry
@@ -572,8 +603,12 @@ verify is not.
 The throughput ceiling is also real, and no amount of software tuning we tried moved it much. At 32
 threads across two sockets, NumaRing's raw throughput sits in the low hundreds of thousands of
 operations per second in the instrumented benchmark and around ten million in the uninstrumented
-driver, both far short of the workload's original 120 million operations per second target. We do
-not think a third round of the same kind of fix closes that gap. The two fixes in this paper
+driver, both far short of the workload's original 120 million operations per second target. That
+number is worth being honest about: it comes from this project's own design roadmap, set before
+any of the evaluation in this paper, not from a derivation, a reference machine, or a competing
+system's published number, and we cannot reconstruct after the fact what it was based on. We report
+the miss against it because it was the stated goal, not because we can defend the number itself. We
+do not think a third round of the same kind of fix closes that gap. The two fixes in this paper
 targeted software overhead this project's own code introduced (a redundant lookup, an unnecessary
 shared atomic); once those are gone, what remains is the same hardware limit the motivation in
 Section~\ref{sec:eval-setup} describes: two sockets connected by an interconnect with fixed
@@ -585,7 +620,11 @@ counters are contended, and we do not have evidence for either from a 32-vCPU cl
 The evaluation's other limits are worth stating plainly rather than leaving implicit. Every number
 in Section~\ref{sec:eval} comes from one machine type (\texttt{n2-standard-32}) in one cloud
 region, and while we controlled for host-to-host variance within that constraint, we have not
-tested a different NUMA topology, a different interconnect, or bare-metal hardware. The workload is
+tested a four- or eight-socket topology, a bare-metal two-socket machine with more cores per
+node, a different interconnect, or a different cloud provider. Two nodes is also the smallest
+topology where a hierarchical, per-node design can show any effect at all; we cannot tell from
+this evaluation whether batched work stealing pays off the same way, better, or worse once there
+are more than two nodes to steal between. The workload is
 a synthetic, symmetric producer-consumer benchmark with a fixed capacity and batch size; it is not
 a trace from a real application, and different workload shapes could move the work-stealing fix's
 benefit up or down. \texttt{perf c2c} confirmation of the cross-socket cache-invalidation reduction

@@ -83,6 +83,13 @@ double Percentile(const std::vector<std::uint64_t>& sorted_ns, double q) {
 // CPUs of one NUMA node (round-robin by thread_index() across
 // however many nodes exist) via libnuma's numa_run_on_node() — a
 // no-op on non-NUMA hardware.
+// ponytail: numa_run_on_node() leaks an 8-byte-per-CPU bitmask inside
+// libnuma itself (confirmed under LeakSanitizer) — its internal
+// numa_node_to_cpus() call is never freed. One-time, ~8KB total for a
+// full benchmark run, at thread start only, not per-operation. Not
+// worth hand-rolling numa_node_to_cpus()+sched_setaffinity()+
+// numa_bitmask_free() to route around a third-party library's fixed
+// startup cost in benchmark-only code that ships to no one.
 void PinToNodeForThisThread(int thread_index) {
 #if defined(__linux__)
   if (numaring::numa_supported()) {

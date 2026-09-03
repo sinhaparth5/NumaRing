@@ -29,6 +29,9 @@
 
 namespace {
 
+// ponytail: see the identical note in latency_suite_benchmark.cpp —
+// numa_run_on_node() leaks a small bitmask inside libnuma itself,
+// once per thread at startup, not per-operation. Not fixed here.
 void PinToNode(int thread_index) {
 #if defined(__linux__)
   if (numaring::numa_supported()) {
